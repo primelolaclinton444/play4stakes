@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Optional: small global tweaks */
 :root { color-scheme: dark; }
-* { box-sizing: border-box; }
 html, body { height: 100%; }
