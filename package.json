@@ -1,6 +1,7 @@
 {
   "name": "play4stakes",
   "version": "1.0.0",
+  "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -10,5 +11,11 @@
     "next": "14.0.0",
     "react": "18.2.0",
     "react-dom": "18.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "@types/react": "^18.2.64",
+    "@types/react-dom": "^18.2.21",
+    "@types/node": "^20.11.30"
   }
 }
