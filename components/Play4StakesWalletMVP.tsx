@@ -76,8 +76,24 @@ function loadWallets(): Record<string, number> {
   try { const s = localStorage.getItem(LS_WALLETS); return s ? JSON.parse(s) : {}; } catch { return {}; }
 }
 function saveWallets(map: Record<string, number>) { localStorage.setItem(LS_WALLETS, JSON.stringify(map)); }
-function getBalance(uid: string) { const w = loadWallets(); return w[uid] ?? 0; }
-function setBalance(uid: string, amt: number) { const w = loadWallets(); w[uid] = amt; saveWallets(w); }
+
+/** ---- Wallet helpers (renamed to avoid React state setter collision) ---- */
+function getWalletBalance(uid: string) { const w = loadWallets(); return w[uid] ?? 0; }
+function setWalletBalance(uid: string, amt: number) { const w = loadWallets(); w[uid] = amt; saveWallets(w); }
+
+/** Optional convenience helpers */
+function credit(uid: string, amount: number) {
+  const next = getWalletBalance(uid) + amount;
+  setWalletBalance(uid, next);
+  return next;
+}
+function debit(uid: string, amount: number) {
+  const cur = getWalletBalance(uid);
+  if (cur < amount) throw new Error('INSUFFICIENT_FUNDS');
+  const next = cur - amount;
+  setWalletBalance(uid, next);
+  return next;
+}
 
 function loadChallenges(): Record<string, Challenge> {
   try { const s = localStorage.getItem(LS_CHALLENGES); return s ? JSON.parse(s) : {}; } catch { return {}; }
@@ -144,9 +160,9 @@ function ShareButton({ url, code }: { url: string; code: string }) {
  * SHELL + HEADER (with balance strip when authed)
  *******************************/
 function Shell({ children, onBack, showBack, authed, uid }: { children: React.ReactNode; onBack?: () => void; showBack?: boolean; authed: boolean; uid: string }) {
-  const [balance, setBalance] = useState<number>(getBalance(uid));
-  useEffect(() => { setBalance(getBalance(uid)); }, [uid]);
-  const onTopUp = () => { const b = getBalance(uid) + 500; setBalance(b); setBalance(uid, b); };
+  const [balance, setBalance] = useState<number>(getWalletBalance(uid));
+  useEffect(() => { setBalance(getWalletBalance(uid)); }, [uid]);
+  const onTopUp = () => { const next = credit(uid, 500); setBalance(next); };
   return (
     <div className="min-h-screen bg-black text-white">
       <header className="px-4 py-6 border-b border-zinc-900">
@@ -340,7 +356,7 @@ function GamePage({ title, game, onNavigate, authed, uid }: { title: string; gam
   const handleCreate = () => {
     setErr(null);
     if (!authed) { return onNavigate({ name: 'auth', redirect: '/app' }); }
-    const balance = getBalance(uid);
+    const balance = getWalletBalance(uid);
     if (stake <= 0 || !Number.isFinite(stake)) return setErr('Enter a valid stake');
     if (balance < stake) return setErr('Insufficient balance — top up then retry.');
 
@@ -352,7 +368,7 @@ function GamePage({ title, game, onNavigate, authed, uid }: { title: string; gam
       creatorUid: uid, creatorAccepted: true, escrowedCreator: stake,
     };
     // escrow creator stake
-    setBalance(uid, balance - stake);
+    setWalletBalance(uid, balance - stake);
     upsertChallenge(ch);
     setCreateInfo({ code, seed });
   };
@@ -439,10 +455,10 @@ function PlayChallenge({ code, role, onNavigate, authed, uid }: { code: string; 
   const acceptOpponent = () => {
     setErr(null);
     if (!authed) return onNavigate({ name: 'auth', redirect: `/play?code=${code}&role=opponent` });
-    const bal = getBalance(uid);
+    const bal = getWalletBalance(uid);
     if (bal < ch.stake) { setErr('Insufficient balance — top up then accept.'); return; }
     ch.opponentUid = uid; ch.opponentAccepted = true; ch.status = 'FILLED'; ch.escrowedOpponent = (ch.escrowedOpponent ?? 0) + ch.stake;
-    setBalance(uid, bal - ch.stake);
+    setWalletBalance(uid, bal - ch.stake);
     upsertChallenge(ch);
     setCh({ ...ch });
   };
@@ -463,13 +479,13 @@ function PlayChallenge({ code, role, onNavigate, authed, uid }: { code: string; 
     if (!isFinite(a) || !isFinite(b)) return; // wait until both done
     if (a < b) {
       // creator wins
-      if (c.creatorUid) setBalance(c.creatorUid, getBalance(c.creatorUid) + pot);
+      if (c.creatorUid) setWalletBalance(c.creatorUid, getWalletBalance(c.creatorUid) + pot);
     } else if (b < a) {
-      if (c.opponentUid) setBalance(c.opponentUid, getBalance(c.opponentUid) + pot);
+      if (c.opponentUid) setWalletBalance(c.opponentUid, getWalletBalance(c.opponentUid) + pot);
     } else {
       // tie — refund
-      if (c.creatorUid) setBalance(c.creatorUid, getBalance(c.creatorUid) + (c.escrowedCreator ?? 0));
-      if (c.opponentUid) setBalance(c.opponentUid, getBalance(c.opponentUid) + (c.escrowedOpponent ?? 0));
+      if (c.creatorUid) setWalletBalance(c.creatorUid, getWalletBalance(c.creatorUid) + (c.escrowedCreator ?? 0));
+      if (c.opponentUid) setWalletBalance(c.opponentUid, getWalletBalance(c.opponentUid) + (c.escrowedOpponent ?? 0));
     }
     c.settled = true; upsertChallenge(c); setCh({ ...c });
   }
