@@ -1,3 +1,5 @@
+import "./globals.css";
+
 export const metadata = {
   title: "Play4Stakes",
   description: "Stake your skill. Win the pot.",
