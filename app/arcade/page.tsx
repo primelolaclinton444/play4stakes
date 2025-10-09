@@ -1,8 +1,9 @@
 'use client';
-
-import React from 'react';
-import Play4StakesWalletMVP from '@/components/Play4StakesWalletMVP';
-
 export default function ArcadePage() {
-  return <Play4StakesWalletMVP />;
+  return (
+    <main style={{padding: 24}}>
+      <h1>Arcade is LIVE ✅</h1>
+      <p>If you can see this, routing works.</p>
+    </main>
+  );
 }
