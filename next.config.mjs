@@ -5,8 +5,8 @@ const nextConfig = {
   reactStrictMode: true,
   experimental: { appDir: true },
   webpack: (config) => {
-    // Make '@' point to the project root so '@/components/...' works in Webpack too
-    config.resolve.alias["@"] = path.resolve(__dirname, ".");
+    // Fix alias for '@' to map correctly to the root directory
+    config.resolve.alias["@"] = path.resolve(process.cwd());
     return config;
   },
 };
