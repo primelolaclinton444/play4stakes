@@ -14,6 +14,17 @@ type GameType = 'SCOUT' | 'DOWN' | 'UP';
 
 type Result = { rawMs: number; finalMs: number; finishedAt: number };
 
+type ChallengeMode = 'ASYNC' | 'SYNC';
+type ChallengePhase = 'WAITING_READY' | 'IN_PROGRESS' | 'COMPLETE';
+type ChallengeResultType = 'WIN' | 'DRAW' | 'FORFEIT';
+
+type SettlementSnapshot = {
+  pot: number;
+  winnerUid: string | null;
+  reason: ChallengeResultType | 'TIE';
+  finalizedAt: number;
+};
+
 type Challenge = {
   code: string;
   gameType: GameType;
@@ -31,6 +42,36 @@ type Challenge = {
   createdAt: number;
   expiresAt: number;
   settled?: boolean;
+  mode?: ChallengeMode;
+  phase?: ChallengePhase;
+  winnerUid?: string;
+  resultType?: ChallengeResultType;
+  forfeitUid?: string;
+  readyCreator?: boolean;
+  readyOpponent?: boolean;
+  readyDeadlineAt?: number;
+  turnDeadlineAt?: number;
+  turnNumber?: number;
+  currentTurnUid?: string;
+  settlementTxId?: string;
+  settlementSnapshot?: SettlementSnapshot;
+};
+
+type Connect4Move = {
+  moveIndex: number;
+  actorUid: string;
+  col: number;
+  timestamp: number;
+};
+
+type Connect4MatchState = {
+  challengeCode: string;
+  challengeId: string;
+  boardState: number[];
+  moves: Connect4Move[];
+  phase: ChallengePhase;
+  startedAt?: number;
+  endedAt?: number;
 };
 
 type View =
@@ -47,6 +88,7 @@ const LS_CHALLENGES = 'p4s_challenges_v2';
 const LS_WALLETS = 'p4s_wallets_v1';
 const LS_UID = 'p4s_uid_v1';
 const LS_AUTH = 'p4s_auth_v1';
+const LS_CONNECT4_MATCH_STATES = 'p4s_connect4_match_states_v1';
 
 function getUID() {
   try {
@@ -96,8 +138,47 @@ function debit(uid: string, amount: number) {
   return next;
 }
 
+
+
+function loadConnect4MatchStates(): Record<string, Connect4MatchState> {
+  try { const s = localStorage.getItem(LS_CONNECT4_MATCH_STATES); return s ? JSON.parse(s) : {}; } catch { return {}; }
+}
+function saveConnect4MatchStates(map: Record<string, Connect4MatchState>) { localStorage.setItem(LS_CONNECT4_MATCH_STATES, JSON.stringify(map)); }
+
+function migrateChallengesV3(input: Record<string, Challenge>): Record<string, Challenge> {
+  const out: Record<string, Challenge> = {};
+  for (const [code, challenge] of Object.entries(input)) {
+    const next: Challenge = { ...challenge };
+    if (!next.mode) next.mode = 'ASYNC';
+    if (next.status === 'COMPLETE' && !next.phase) next.phase = 'COMPLETE';
+    out[code] = next;
+  }
+  return out;
+}
+
+function rollbackChallengesToV2(input: Record<string, Challenge>): Record<string, Challenge> {
+  const out: Record<string, Challenge> = {};
+  for (const [code, challenge] of Object.entries(input)) {
+    const {
+      mode, phase, winnerUid, resultType, forfeitUid, readyCreator, readyOpponent, readyDeadlineAt,
+      turnDeadlineAt, turnNumber, currentTurnUid, settlementTxId, settlementSnapshot,
+      ...legacy
+    } = challenge;
+    void mode; void phase; void winnerUid; void resultType; void forfeitUid; void readyCreator; void readyOpponent; void readyDeadlineAt;
+    void turnDeadlineAt; void turnNumber; void currentTurnUid; void settlementTxId; void settlementSnapshot;
+    out[code] = legacy;
+  }
+  return out;
+}
+
 function loadChallenges(): Record<string, Challenge> {
-  try { const s = localStorage.getItem(LS_CHALLENGES); return s ? JSON.parse(s) : {}; } catch { return {}; }
+  try {
+    const s = localStorage.getItem(LS_CHALLENGES);
+    const parsed: Record<string, Challenge> = s ? JSON.parse(s) : {};
+    const migrated = migrateChallengesV3(parsed);
+    if (JSON.stringify(parsed) !== JSON.stringify(migrated)) saveChallenges(migrated);
+    return migrated;
+  } catch { return {}; }
 }
 function saveChallenges(map: Record<string, Challenge>) { localStorage.setItem(LS_CHALLENGES, JSON.stringify(map)); }
 function upsertChallenge(ch: Challenge) { const map = loadChallenges(); map[ch.code] = ch; saveChallenges(map); }
@@ -367,6 +448,7 @@ function GamePage({ title, game, onNavigate, authed, uid }: { title: string; gam
       code, gameType: game, seed, stake,
       status: 'OPEN', createdAt: Date.now(), expiresAt: Date.now() + 48 * 3600 * 1000,
       creatorUid: uid, creatorAccepted: true, escrowedCreator: stake,
+      mode: 'ASYNC',
     };
     // escrow creator stake
     setWalletBalance(uid, balance - stake);
@@ -488,6 +570,13 @@ function PlayChallenge({ code, role, onNavigate, authed, uid }: { code: string; 
       if (c.creatorUid) setWalletBalance(c.creatorUid, getWalletBalance(c.creatorUid) + (c.escrowedCreator ?? 0));
       if (c.opponentUid) setWalletBalance(c.opponentUid, getWalletBalance(c.opponentUid) + (c.escrowedOpponent ?? 0));
     }
+    c.settlementTxId = c.settlementTxId ?? `settle_${c.code}`;
+    c.settlementSnapshot = {
+      pot,
+      winnerUid: a < b ? c.creatorUid ?? null : b < a ? c.opponentUid ?? null : null,
+      reason: a === b ? 'TIE' : 'WIN',
+      finalizedAt: Date.now(),
+    };
     c.settled = true; upsertChallenge(c); setCh({ ...c });
   }
 
