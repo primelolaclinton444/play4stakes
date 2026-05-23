@@ -6,7 +6,7 @@ This is an execution-ready backlog to implement the Connect 4 synchronous lifecy
 
 ## Phase 0 — Product, Rules, and Policy Freeze
 
-- [ ] **P0.1 Finalize match policy constants**
+- [x] **P0.1 Finalize match policy constants**
   - Decide and document:
     - Join window duration (`openExpiresIn`)
     - Ready timeout (`readyTimeoutMs`)
@@ -15,11 +15,11 @@ This is an execution-ready backlog to implement the Connect 4 synchronous lifecy
     - No-show/forfeit payout policy
   - Output: `connect4Policy` config with versioning.
 
-- [ ] **P0.2 Define legal/compliance copy for staked synchronous play**
+- [x] **P0.2 Define legal/compliance copy for staked synchronous play**
   - Explicitly disclose timeout, disconnect, and forfeiture behavior in user-facing terms.
   - Output: approved copy blocks for challenge create/join/ready screens.
 
-- [ ] **P0.3 Add telemetry event schema contract**
+- [x] **P0.3 Add telemetry event schema contract**
   - Define analytics event names + required fields before implementation.
   - Output: event dictionary (challenge lifecycle + gameplay events).
 
@@ -27,7 +27,7 @@ This is an execution-ready backlog to implement the Connect 4 synchronous lifecy
 
 ## Phase 1 — Data Model and Persistence
 
-- [ ] **P1.1 Extend `Challenge` domain model for synchronous games**
+- [x] **P1.1 Extend `Challenge` domain model for synchronous games**
   - Add fields:
     - `mode: 'ASYNC' | 'SYNC'`
     - `phase: 'WAITING_READY' | 'IN_PROGRESS' | 'COMPLETE'`
@@ -36,18 +36,18 @@ This is an execution-ready backlog to implement the Connect 4 synchronous lifecy
     - `turnDeadlineAt?`, `turnNumber?`, `currentTurnUid?`
   - Ensure backward compatibility for existing async games.
 
-- [ ] **P1.2 Add Connect 4 match-state entity**
+- [x] **P1.2 Add Connect 4 match-state entity**
   - New persisted object/table keyed by challenge code/id:
     - `boardState` (7x6 compact array/bitboard)
     - `moves[]` (append-only with move index, actor uid, col, timestamp)
     - `phase`, `startedAt`, `endedAt`
   - Add uniqueness and foreign-key guarantees.
 
-- [ ] **P1.3 Add settlement receipt metadata**
+- [x] **P1.3 Add settlement receipt metadata**
   - `settlementTxId` (idempotency key)
   - settlement snapshot fields (pot, winner, reason, finalizedAt).
 
-- [ ] **P1.4 Add migration + rollback plan**
+- [x] **P1.4 Add migration + rollback plan**
   - Write migration script(s) and rollback script(s).
   - Include migration test on seeded local data.
 
