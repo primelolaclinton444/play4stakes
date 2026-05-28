@@ -6,7 +6,7 @@ This is an execution-ready backlog to implement the Connect 4 synchronous lifecy
 
 ## Phase 0 — Product, Rules, and Policy Freeze
 
-- [ ] **P0.1 Finalize match policy constants**
+- [x] **P0.1 Finalize match policy constants**
   - Decide and document:
     - Join window duration (`openExpiresIn`)
     - Ready timeout (`readyTimeoutMs`)
@@ -15,11 +15,11 @@ This is an execution-ready backlog to implement the Connect 4 synchronous lifecy
     - No-show/forfeit payout policy
   - Output: `connect4Policy` config with versioning.
 
-- [ ] **P0.2 Define legal/compliance copy for staked synchronous play**
+- [x] **P0.2 Define legal/compliance copy for staked synchronous play**
   - Explicitly disclose timeout, disconnect, and forfeiture behavior in user-facing terms.
   - Output: approved copy blocks for challenge create/join/ready screens.
 
-- [ ] **P0.3 Add telemetry event schema contract**
+- [x] **P0.3 Add telemetry event schema contract**
   - Define analytics event names + required fields before implementation.
   - Output: event dictionary (challenge lifecycle + gameplay events).
 
@@ -27,7 +27,7 @@ This is an execution-ready backlog to implement the Connect 4 synchronous lifecy
 
 ## Phase 1 — Data Model and Persistence
 
-- [ ] **P1.1 Extend `Challenge` domain model for synchronous games**
+- [x] **P1.1 Extend `Challenge` domain model for synchronous games**
   - Add fields:
     - `mode: 'ASYNC' | 'SYNC'`
     - `phase: 'WAITING_READY' | 'IN_PROGRESS' | 'COMPLETE'`
@@ -36,18 +36,18 @@ This is an execution-ready backlog to implement the Connect 4 synchronous lifecy
     - `turnDeadlineAt?`, `turnNumber?`, `currentTurnUid?`
   - Ensure backward compatibility for existing async games.
 
-- [ ] **P1.2 Add Connect 4 match-state entity**
+- [x] **P1.2 Add Connect 4 match-state entity**
   - New persisted object/table keyed by challenge code/id:
     - `boardState` (7x6 compact array/bitboard)
     - `moves[]` (append-only with move index, actor uid, col, timestamp)
     - `phase`, `startedAt`, `endedAt`
   - Add uniqueness and foreign-key guarantees.
 
-- [ ] **P1.3 Add settlement receipt metadata**
+- [x] **P1.3 Add settlement receipt metadata**
   - `settlementTxId` (idempotency key)
   - settlement snapshot fields (pot, winner, reason, finalizedAt).
 
-- [ ] **P1.4 Add migration + rollback plan**
+- [x] **P1.4 Add migration + rollback plan**
   - Write migration script(s) and rollback script(s).
   - Include migration test on seeded local data.
 
@@ -55,14 +55,14 @@ This is an execution-ready backlog to implement the Connect 4 synchronous lifecy
 
 ## Phase 2 — Backend Game Engine + State Machine
 
-- [ ] **P2.1 Implement Connect 4 rules engine (pure functions)**
+- [x] **P2.1 Implement Connect 4 rules engine (pure functions)**
   - Validate move legality.
   - Apply move to board.
   - Detect win/draw.
   - Serialize/deserialize board representation.
   - Unit test all edge cases.
 
-- [ ] **P2.2 Implement lifecycle state machine guards**
+- [x] **P2.2 Implement lifecycle state machine guards**
   - Legal transitions only:
     - `OPEN -> FILLED`
     - `FILLED -> WAITING_READY`
@@ -71,18 +71,18 @@ This is an execution-ready backlog to implement the Connect 4 synchronous lifecy
     - `COMPLETE -> SETTLED`
   - Handle side exits (`EXPIRED`, `FORFEIT_COMPLETE`, `NO_SHOW_CANCEL`).
 
-- [ ] **P2.3 Implement authoritative move endpoint/service**
+- [x] **P2.3 Implement authoritative move endpoint/service**
   - Validate actor identity and turn ownership.
   - Enforce deadline and legality.
   - Persist move + board + next turn atomically.
   - Emit live update event.
 
-- [ ] **P2.4 Implement ready/unready handling**
+- [x] **P2.4 Implement ready/unready handling**
   - Ready flags per player.
   - Start game only when both ready.
   - Lock first-turn deadline on start.
 
-- [ ] **P2.5 Implement timeout adjudication worker**
+- [x] **P2.5 Implement timeout adjudication worker**
   - Periodic job to process:
     - Join expiry
     - Ready timeout no-show
@@ -93,104 +93,104 @@ This is an execution-ready backlog to implement the Connect 4 synchronous lifecy
 
 ## Phase 3 — Wallet / Escrow / Settlement Hardening
 
-- [ ] **P3.1 Reuse existing escrow lock flow for `CONNECT4` create/join**
+- [x] **P3.1 Reuse existing escrow lock flow for `CONNECT4` create/join**
   - Creator escrow at create.
   - Opponent escrow at accept.
   - Reject if insufficient balance at any point.
 
-- [ ] **P3.2 Implement idempotent settlement service**
+- [x] **P3.2 Implement idempotent settlement service**
   - Exactly-once payout using `settlementTxId` or unique constraint.
   - Result mapping:
     - Win -> winner gets full pot.
     - Draw -> both refunded.
     - Forfeit -> non-forfeiting player gets full pot.
 
-- [ ] **P3.3 Add compensating transaction behavior**
+- [x] **P3.3 Add compensating transaction behavior**
   - If settlement write fails mid-flow, retry safely without double credit.
 
-- [ ] **P3.4 Add settlement audit log**
+- [x] **P3.4 Add settlement audit log**
   - Immutable log row/event with actors, reason, balances before/after.
 
 ---
 
 ## Phase 4 — Realtime Transport and Presence
 
-- [ ] **P4.1 Implement channel model for match updates**
+- [x] **P4.1 Implement channel model for match updates**
   - Subscribe both players to one match channel.
   - Broadcast events: ready status, move committed, timeout, settle.
 
-- [ ] **P4.2 Presence heartbeat + reconnect tracking**
+- [x] **P4.2 Presence heartbeat + reconnect tracking**
   - Track last-seen per player.
   - Use presence only as signal; server deadlines remain authoritative.
 
-- [ ] **P4.3 Rejoin/resync endpoint**
+- [x] **P4.3 Rejoin/resync endpoint**
   - On reconnect, return canonical board, turn, deadlines, and outcome status.
 
 ---
 
 ## Phase 5 — Frontend UX (Arcade Integration)
 
-- [ ] **P5.1 Add Connect 4 game option to Arcade game list**
+- [x] **P5.1 Add Connect 4 game option to Arcade game list**
   - Add card in game selector with synchronous badge.
 
-- [ ] **P5.2 Create Connect 4 challenge creation UX**
+- [x] **P5.2 Create Connect 4 challenge creation UX**
   - Stake input + policy disclosure + create action.
   - Show share link/code after escrow lock.
 
-- [ ] **P5.3 Create challenge join + stake accept UX**
+- [x] **P5.3 Create challenge join + stake accept UX**
   - Opponent sees stake and timeout rules before accepting.
 
-- [ ] **P5.4 Build ready room screen**
+- [x] **P5.4 Build ready room screen**
   - Both players ready toggles.
   - Countdown to no-show adjudication.
 
-- [ ] **P5.5 Build live Connect 4 board screen**
+- [x] **P5.5 Build live Connect 4 board screen**
   - Turn indicator.
   - Turn timer countdown.
   - Disabled input when not your turn.
 
-- [ ] **P5.6 Build terminal result screen**
+- [x] **P5.6 Build terminal result screen**
   - Win/draw/forfeit reason.
   - Pot outcome and wallet delta.
   - Settlement confirmation status.
 
-- [ ] **P5.7 Add reconnect/resync UX states**
+- [x] **P5.7 Add reconnect/resync UX states**
   - "Reconnecting", "Resynced", "Opponent disconnected" notices.
 
 ---
 
 ## Phase 6 — Security, Integrity, and Abuse Controls
 
-- [ ] **P6.1 Server-side authorization checks on every action**
+- [x] **P6.1 Server-side authorization checks on every action**
   - Only challenge participants can ready/move/view private match events.
 
-- [ ] **P6.2 Anti-replay and duplicate move protection**
+- [x] **P6.2 Anti-replay and duplicate move protection**
   - Move index or nonce checks.
 
-- [ ] **P6.3 Rate limits**
+- [x] **P6.3 Rate limits**
   - Per-player limits on move requests and join attempts.
 
-- [ ] **P6.4 Tamper detection instrumentation**
+- [x] **P6.4 Tamper detection instrumentation**
   - Log repeated illegal move attempts and suspicious patterns.
 
 ---
 
 ## Phase 7 — Testing Strategy
 
-- [ ] **P7.1 Unit tests (rules engine + state transitions)**
+- [x] **P7.1 Unit tests (rules engine + state transitions)**
   - All win vectors, draw, illegal moves, transition guards.
 
-- [ ] **P7.2 Integration tests (challenge lifecycle)**
+- [x] **P7.2 Integration tests (challenge lifecycle)**
   - Create -> accept -> ready -> moves -> complete -> settle.
 
-- [ ] **P7.3 Concurrency tests**
+- [x] **P7.3 Concurrency tests**
   - Simultaneous move submissions.
   - Repeated settlement triggers.
 
-- [ ] **P7.4 Failure-path tests**
+- [x] **P7.4 Failure-path tests**
   - Disconnect, timeout, no-show, worker retries, partial write failures.
 
-- [ ] **P7.5 Wallet invariants tests**
+- [x] **P7.5 Wallet invariants tests**
   - Pot conservation and no double payout across retries.
 
 - [ ] **P7.6 End-to-end UI tests**

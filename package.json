@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test:connect4": "rm -rf .test-build && tsc --module commonjs --target ES2020 --moduleResolution node --esModuleInterop --skipLibCheck --outDir .test-build tests/connect4/runConnect4Tests.ts lib/connect4/engine.ts lib/connect4/stateMachine.ts lib/connect4/service.ts lib/connect4/settlement.ts lib/connect4/security.ts && node .test-build/tests/connect4/runConnect4Tests.js"
   },
   "dependencies": {
     "next": "14.0.0",
