@@ -1,5 +1,7 @@
 "use client"
 import React, { useEffect, useMemo, useState } from "react";
+import { connect4Policy } from "@/config/connect4/policy";
+import { applyMove, createEmptyBoard, detectWinner, isDraw, type Connect4Board, type Connect4Player } from "@/lib/connect4/engine";
 
 /*******************************
  * PLAY4STAKES — LANDING + WALLET MVP (COMBINED)
@@ -10,7 +12,7 @@ import React, { useEffect, useMemo, useState } from "react";
  * - Live 6-decimal timer for all games
  *******************************/
 
-type GameType = 'SCOUT' | 'DOWN' | 'UP';
+type GameType = 'SCOUT' | 'DOWN' | 'UP' | 'CONNECT4';
 
 type Result = { rawMs: number; finalMs: number; finishedAt: number };
 
@@ -183,6 +185,11 @@ function loadChallenges(): Record<string, Challenge> {
 function saveChallenges(map: Record<string, Challenge>) { localStorage.setItem(LS_CHALLENGES, JSON.stringify(map)); }
 function upsertChallenge(ch: Challenge) { const map = loadChallenges(); map[ch.code] = ch; saveChallenges(map); }
 function getChallenge(code: string): Challenge | undefined { const map = loadChallenges(); return map[code.toUpperCase()]; }
+function upsertConnect4MatchState(match: Connect4MatchState) { const map = loadConnect4MatchStates(); map[match.challengeCode] = match; saveConnect4MatchStates(map); }
+function getConnect4MatchState(code: string): Connect4MatchState | undefined { const map = loadConnect4MatchStates(); return map[code.toUpperCase()]; }
+function gameTitle(game: GameType) { return game === 'SCOUT' ? '5 Numbers Scout' : game === 'DOWN' ? '25 Down' : game === 'UP' ? '25 Up' : 'Connect 4'; }
+function roleUid(ch: Challenge, role: 'creator' | 'opponent') { return role === 'creator' ? ch.creatorUid : ch.opponentUid; }
+function formatSeconds(ms: number) { return `${Math.max(0, Math.ceil(ms / 1000))}s`; }
 
 /*******************************
  * UTILS: Codes, PRNG, Seeds, Shuffle
@@ -421,6 +428,7 @@ function AppLanding({ onNavigate, authed, uid }: { onNavigate: (v: View) => void
         <GameCard title="5 Numbers Scout" desc="Find any five targets fast." onClick={() => onNavigate({ name: 'game', which: 'SCOUT' })} />
         <GameCard title="25 Down" desc="Tap 25 → 1 in order." onClick={() => onNavigate({ name: 'game', which: 'DOWN' })} />
         <GameCard title="25 Up" desc="Tap 1 → 25 in order." onClick={() => onNavigate({ name: 'game', which: 'UP' })} />
+        <GameCard title="Connect 4" desc="Live synchronous board game with turn timers." badge="SYNC" onClick={() => onNavigate({ name: 'game', which: 'CONNECT4' })} />
       </div>
     </Shell>
   );
@@ -444,15 +452,24 @@ function GamePage({ title, game, onNavigate, authed, uid }: { title: string; gam
 
     const code = genCode();
     const seed = (Math.random().toString(36).slice(2) + Date.now().toString(36)).toUpperCase();
+    const now = Date.now();
+    const isConnect4 = game === 'CONNECT4';
     const ch: Challenge = {
       code, gameType: game, seed, stake,
-      status: 'OPEN', createdAt: Date.now(), expiresAt: Date.now() + 48 * 3600 * 1000,
+      status: 'OPEN', createdAt: now, expiresAt: now + (isConnect4 ? connect4Policy.openExpiresInMs : 48 * 3600 * 1000),
       creatorUid: uid, creatorAccepted: true, escrowedCreator: stake,
-      mode: 'ASYNC',
+      mode: isConnect4 ? 'SYNC' : 'ASYNC',
+      phase: isConnect4 ? 'WAITING_READY' : undefined,
+      readyCreator: isConnect4 ? false : undefined,
+      readyOpponent: isConnect4 ? false : undefined,
+      turnNumber: isConnect4 ? 0 : undefined,
     };
     // escrow creator stake
     setWalletBalance(uid, balance - stake);
     upsertChallenge(ch);
+    if (isConnect4) {
+      upsertConnect4MatchState({ challengeCode: code, challengeId: code, boardState: createEmptyBoard(), moves: [], phase: 'WAITING_READY' });
+    }
     setCreateInfo({ code, seed });
   };
 
@@ -463,6 +480,7 @@ function GamePage({ title, game, onNavigate, authed, uid }: { title: string; gam
           {game === 'SCOUT' && <FiveNumberScoutPreview />}
           {game === 'DOWN' && <TwentyFiveDownPreview />}
           {game === 'UP' && <TwentyFiveUpPreview />}
+          {game === 'CONNECT4' && <Connect4Preview />}
         </div>
         <aside className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
           <h3 className="text-lg font-bold mb-2">Play Modes</h3>
@@ -489,23 +507,255 @@ function GamePage({ title, game, onNavigate, authed, uid }: { title: string; gam
               </div>
             </div>
           )}
-          <p className="text-xs text-zinc-400 mt-4">Stake is deducted now and held in escrow. Opponent must accept the same stake to play.</p>
+          {game === 'CONNECT4' ? <Connect4PolicyDisclosure /> : <p className="text-xs text-zinc-400 mt-4">Stake is deducted now and held in escrow. Opponent must accept the same stake to play.</p>}
         </aside>
       </div>
     </Shell>
   );
 }
 
-function GameCard({ title, desc, onClick }: { title: string; desc: string; onClick: () => void }) {
+function GameCard({ title, desc, badge, onClick }: { title: string; desc: string; badge?: string; onClick: () => void }) {
   return (
     <button onClick={onClick} className="text-left block w-full rounded-2xl border border-zinc-800 bg-zinc-950 p-5 hover:bg-zinc-900 transition-colors">
-      <div className="text-xl font-bold mb-1">{title}</div>
+      <div className="flex items-center gap-2 mb-1"><div className="text-xl font-bold">{title}</div>{badge && <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-400 text-black font-bold">{badge}</span>}</div>
       <div className="text-sm text-zinc-400 mb-4">{desc}</div>
       <div className="text-sm text-black font-semibold inline-block bg-white px-3 py-1 rounded-lg">Open</div>
     </button>
   );
 }
 function FeatureCard({ title, onClick }: { title: string; onClick: () => void }) { return <GameCard title={title} desc="Interactive preview" onClick={onClick} />; }
+
+
+function Connect4PolicyDisclosure() {
+  return (
+    <div className="text-xs text-zinc-400 mt-4 space-y-2 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3">
+      <p><span className="font-semibold text-yellow-200">Synchronous game:</span> creator stake is escrowed now; opponent stake locks on accept.</p>
+      <p>Join window: {formatSeconds(connect4Policy.openExpiresInMs)}. Ready timeout: {formatSeconds(connect4Policy.readyTimeoutMs)}. Turn timer: {formatSeconds(connect4Policy.turnTimeoutMs)}.</p>
+      <p>Draws refund both players. A turn timeout forfeits the full pot to the non-forfeiting player.</p>
+    </div>
+  );
+}
+
+function Connect4Preview() {
+  return (
+    <div>
+      <h3 className="text-xl font-bold mb-2">Connect 4</h3>
+      <p className="text-sm text-zinc-400 mb-4">Create a live challenge, both players ready up, then take alternating timed turns.</p>
+      <div className="grid grid-cols-7 gap-2 max-w-sm">
+        {Array.from({ length: 42 }, (_, i) => <div key={i} className="aspect-square rounded-full bg-zinc-800 border border-zinc-700" />)}
+      </div>
+    </div>
+  );
+}
+
+type Connect4ChallengeProps = {
+  ch: Challenge;
+  setCh: (ch: Challenge) => void;
+  code: string;
+  role: 'creator' | 'opponent';
+  uid: string;
+  authed: boolean;
+  onNavigate: (v: View) => void;
+  err: string | null;
+  setErr: (err: string | null) => void;
+  acceptOpponent: () => void;
+};
+
+function Connect4Challenge({ ch, setCh, code, role, uid, authed, onNavigate, err, setErr, acceptOpponent }: Connect4ChallengeProps) {
+  const [match, setMatch] = useState<Connect4MatchState>(() => getConnect4MatchState(ch.code) ?? { challengeCode: ch.code, challengeId: ch.code, boardState: createEmptyBoard(), moves: [], phase: ch.phase ?? 'WAITING_READY' });
+  const [now, setNow] = useState(Date.now());
+  const [notice, setNotice] = useState('Resynced');
+  const [online, setOnline] = useState(true);
+  const participantUid = roleUid(ch, role) ?? uid;
+  const opponentLabel = role === 'creator' ? 'Opponent' : 'Creator';
+  const bothAccepted = ch.creatorAccepted && ch.opponentAccepted;
+  const isMyTurn = ch.phase === 'IN_PROGRESS' && ch.currentTurnUid === participantUid && !ch.settled;
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 500);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const goOnline = () => { setOnline(true); setNotice('Resynced'); };
+    const goOffline = () => { setOnline(false); setNotice('Reconnecting'); };
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    setOnline(navigator.onLine);
+    return () => { window.removeEventListener('online', goOnline); window.removeEventListener('offline', goOffline); };
+  }, []);
+
+  useEffect(() => {
+    if (!ch.settled && ch.phase === 'WAITING_READY' && ch.readyDeadlineAt && now > ch.readyDeadlineAt) {
+      completeNoShowCancel();
+    }
+    if (!ch.settled && ch.phase === 'IN_PROGRESS' && ch.turnDeadlineAt && now > ch.turnDeadlineAt) {
+      completeForfeit(ch.currentTurnUid ?? '');
+    }
+  }, [now, ch]);
+
+  function persist(nextChallenge: Challenge, nextMatch = match) {
+    upsertChallenge(nextChallenge);
+    upsertConnect4MatchState(nextMatch);
+    setCh({ ...nextChallenge });
+    setMatch({ ...nextMatch });
+  }
+
+  function toggleReady() {
+    setErr(null);
+    if (!authed) return onNavigate({ name: 'auth', redirect: `/play?code=${code}&role=${role}` });
+    if (!bothAccepted) return setErr('Both stakes must be locked before readying up.');
+    if (ch.phase !== 'WAITING_READY') return setErr('Ready state is locked after the match starts.');
+    const next: Challenge = { ...ch };
+    if (role === 'creator') next.readyCreator = !next.readyCreator;
+    else next.readyOpponent = !next.readyOpponent;
+    if (!next.readyDeadlineAt) next.readyDeadlineAt = Date.now() + connect4Policy.readyTimeoutMs;
+    if (next.readyCreator && next.readyOpponent) {
+      next.phase = 'IN_PROGRESS';
+      next.currentTurnUid = next.creatorUid;
+      next.turnNumber = 1;
+      next.turnDeadlineAt = Date.now() + connect4Policy.turnTimeoutMs;
+      const nextMatch: Connect4MatchState = { ...match, phase: 'IN_PROGRESS', startedAt: Date.now() };
+      persist(next, nextMatch);
+      return;
+    }
+    persist(next);
+  }
+
+  function commitMove(col: number) {
+    setErr(null);
+    if (!isMyTurn) return setErr('Not your turn.');
+    try {
+      const player: Connect4Player = role === 'creator' ? 1 : 2;
+      const applied = applyMove(match.boardState as Connect4Board, col, player);
+      const moves = [...match.moves, { moveIndex: match.moves.length, actorUid: participantUid, col, timestamp: Date.now() }];
+      const winner = detectWinner(applied.board);
+      const nextMatch: Connect4MatchState = { ...match, boardState: applied.board, moves };
+      const next: Challenge = { ...ch };
+      if (winner || isDraw(applied.board)) {
+        next.phase = 'COMPLETE';
+        next.status = 'COMPLETE';
+        next.resultType = winner ? 'WIN' : 'DRAW';
+        next.winnerUid = winner ? participantUid : undefined;
+        nextMatch.phase = 'COMPLETE';
+        nextMatch.endedAt = Date.now();
+        settleConnect4(next, nextMatch);
+        return;
+      }
+      next.currentTurnUid = role === 'creator' ? next.opponentUid : next.creatorUid;
+      next.turnNumber = (next.turnNumber ?? 1) + 1;
+      next.turnDeadlineAt = Date.now() + connect4Policy.turnTimeoutMs;
+      persist(next, nextMatch);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Invalid move');
+    }
+  }
+
+  function completeForfeit(forfeitUid: string) {
+    const winnerUid = forfeitUid === ch.creatorUid ? ch.opponentUid : ch.creatorUid;
+    const next: Challenge = { ...ch, phase: 'COMPLETE', status: 'COMPLETE', resultType: 'FORFEIT', forfeitUid, winnerUid };
+    const nextMatch: Connect4MatchState = { ...match, phase: 'COMPLETE', endedAt: Date.now() };
+    settleConnect4(next, nextMatch);
+  }
+
+  function completeNoShowCancel() {
+    const next: Challenge = { ...ch, phase: 'COMPLETE', status: 'COMPLETE', resultType: 'DRAW' };
+    const nextMatch: Connect4MatchState = { ...match, phase: 'COMPLETE', endedAt: Date.now() };
+    settleConnect4(next, nextMatch);
+  }
+
+  function settleConnect4(next: Challenge, nextMatch: Connect4MatchState) {
+    if (next.settled) return persist(next, nextMatch);
+    const pot = (next.escrowedCreator ?? 0) + (next.escrowedOpponent ?? 0);
+    if (next.resultType === 'DRAW') {
+      if (next.creatorUid) setWalletBalance(next.creatorUid, getWalletBalance(next.creatorUid) + (next.escrowedCreator ?? 0));
+      if (next.opponentUid) setWalletBalance(next.opponentUid, getWalletBalance(next.opponentUid) + (next.escrowedOpponent ?? 0));
+    } else if (next.winnerUid) {
+      setWalletBalance(next.winnerUid, getWalletBalance(next.winnerUid) + pot);
+    }
+    next.settled = true;
+    next.settlementTxId = next.settlementTxId ?? `settle_connect4_${next.code}`;
+    next.settlementSnapshot = { pot, winnerUid: next.winnerUid ?? null, reason: next.resultType ?? 'DRAW', finalizedAt: Date.now() };
+    persist(next, nextMatch);
+  }
+
+  function resync() {
+    const latest = getChallenge(ch.code);
+    const latestMatch = getConnect4MatchState(ch.code);
+    if (latest) setCh({ ...latest });
+    if (latestMatch) setMatch({ ...latestMatch });
+    setNotice('Resynced');
+  }
+
+  const deadline = ch.phase === 'WAITING_READY' ? ch.readyDeadlineAt : ch.turnDeadlineAt;
+  const timerLabel = deadline ? formatSeconds(deadline - now) : '--';
+  const terminalText = ch.resultType === 'DRAW' ? 'Draw / cancellation — both players refunded.' : ch.resultType === 'FORFEIT' ? `${ch.winnerUid === participantUid ? 'You win' : 'Opponent wins'} by forfeit.` : ch.resultType === 'WIN' ? `${ch.winnerUid === participantUid ? 'You win' : 'Opponent wins'} by Connect 4.` : '';
+
+  return (
+    <Shell showBack onBack={() => onNavigate({ name: 'app' })} authed={authed} uid={uid}>
+      <div className="grid grid-cols-1 md:grid-cols-[1fr_360px] gap-6 items-start">
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div><div className="text-sm text-zinc-400">Connect 4 Challenge</div><div className="text-2xl font-mono font-bold">{ch.code}</div></div>
+            <div className="text-xs px-2 py-1 rounded-full bg-yellow-400 text-black font-bold">SYNC</div>
+          </div>
+          {!bothAccepted && role === 'opponent' && (
+            <div className="mb-4 p-3 rounded-lg bg-zinc-900 border border-zinc-800">
+              <div className="text-sm">Accept stake: <span className="font-semibold">{ch.stake}</span> coins</div>
+              <Connect4PolicyDisclosure />
+              <button onClick={acceptOpponent} className="mt-3 px-3 py-1.5 rounded-lg bg-white text-black font-semibold">Accept & Lock Stake</button>
+            </div>
+          )}
+          {bothAccepted && ch.phase === 'WAITING_READY' && (
+            <div className="mb-4 p-4 rounded-xl bg-zinc-900 border border-zinc-800">
+              <h3 className="font-bold mb-2">Ready Room</h3>
+              <p className="text-sm text-zinc-400 mb-3">Both players must ready before no-show adjudication. Countdown: <span className="font-mono text-white">{timerLabel}</span></p>
+              <button onClick={toggleReady} className="px-4 py-2 rounded-lg bg-white text-black font-semibold">{(role === 'creator' ? ch.readyCreator : ch.readyOpponent) ? 'Unready' : 'Ready'}</button>
+            </div>
+          )}
+          {ch.phase === 'IN_PROGRESS' && (
+            <>
+              <div className="flex items-center justify-between mb-3 text-sm"><div>{isMyTurn ? 'Your turn' : `${opponentLabel}'s turn`}</div><div className="font-mono">Turn {ch.turnNumber}: {timerLabel}</div></div>
+              <Connect4BoardView board={match.boardState} disabled={!isMyTurn} onMove={commitMove} />
+            </>
+          )}
+          {ch.phase === 'COMPLETE' && (
+            <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-800">
+              <h3 className="font-bold mb-2">Result</h3>
+              <p className="text-sm text-zinc-300">{terminalText}</p>
+              <p className="text-xs text-zinc-500 mt-2">Pot: {ch.settlementSnapshot?.pot ?? ch.stake * 2} coins · Settlement: {ch.settlementTxId ?? 'pending'}</p>
+            </div>
+          )}
+          {err && <div className="text-xs text-red-400 mt-3">{err}</div>}
+        </div>
+        <aside className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
+          <h3 className="text-lg font-bold mb-2">Match Status</h3>
+          <ul className="text-sm text-zinc-400 space-y-1">
+            <li>Creator: {ch.readyCreator ? <span className="text-green-400">Ready</span> : ch.creatorAccepted ? 'Stake locked' : 'Waiting'}</li>
+            <li>Opponent: {ch.readyOpponent ? <span className="text-green-400">Ready</span> : ch.opponentAccepted ? 'Stake locked' : 'Waiting'}</li>
+            <li>Network: {online ? <span className="text-green-400">Connected</span> : <span className="text-yellow-300">Reconnecting</span>}</li>
+          </ul>
+          <div className="mt-3 text-xs text-zinc-500">Notice: {notice}{!online ? ` · ${opponentLabel} disconnected` : ''}</div>
+          <button onClick={resync} className="mt-3 px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm">Resync</button>
+          <div className="mt-4 text-xs text-zinc-500">Stake each: <span className="text-white font-semibold">{ch.stake}</span> · Pot {ch.stake * 2}</div>
+        </aside>
+      </div>
+    </Shell>
+  );
+}
+
+function Connect4BoardView({ board, disabled, onMove }: { board: number[]; disabled: boolean; onMove: (col: number) => void }) {
+  return (
+    <div className="inline-grid grid-cols-7 gap-2 rounded-2xl bg-blue-950 p-3 border border-blue-800">
+      {Array.from({ length: 42 }, (_, displayIndex) => {
+        const row = 5 - Math.floor(displayIndex / 7);
+        const col = displayIndex % 7;
+        const value = board[row * 7 + col] ?? 0;
+        return <button key={displayIndex} onClick={() => onMove(col)} disabled={disabled || value !== 0} className={`w-10 h-10 md:w-12 md:h-12 rounded-full border ${value === 1 ? 'bg-red-500 border-red-300' : value === 2 ? 'bg-yellow-300 border-yellow-100' : 'bg-zinc-950 border-blue-700 hover:bg-zinc-800'}`} aria-label={`Column ${col + 1}`} />;
+      })}
+    </div>
+  );
+}
 
 /*******************************
  * CHALLENGE PLAY (seeded, escrow, accept, payout)
@@ -541,8 +791,12 @@ function PlayChallenge({ code, role, onNavigate, authed, uid }: { code: string; 
     const bal = getWalletBalance(uid);
     if (bal < ch.stake) { setErr('Insufficient balance — top up then accept.'); return; }
     ch.opponentUid = uid; ch.opponentAccepted = true; ch.status = 'FILLED'; ch.escrowedOpponent = (ch.escrowedOpponent ?? 0) + ch.stake;
+    if (ch.gameType === 'CONNECT4') { ch.mode = 'SYNC'; ch.phase = 'WAITING_READY'; ch.readyDeadlineAt = Date.now() + connect4Policy.readyTimeoutMs; ch.readyCreator = Boolean(ch.readyCreator); ch.readyOpponent = false; }
     setWalletBalance(uid, bal - ch.stake);
     upsertChallenge(ch);
+    if (ch.gameType === 'CONNECT4') {
+      upsertConnect4MatchState(getConnect4MatchState(ch.code) ?? { challengeCode: ch.code, challengeId: ch.code, boardState: createEmptyBoard(), moves: [], phase: 'WAITING_READY' });
+    }
     setCh({ ...ch });
   };
 
@@ -580,13 +834,15 @@ function PlayChallenge({ code, role, onNavigate, authed, uid }: { code: string; 
     c.settled = true; upsertChallenge(c); setCh({ ...c });
   }
 
+  if (ch.gameType === 'CONNECT4') return <Connect4Challenge ch={ch} setCh={setCh} code={code} role={role} uid={uid} authed={authed} onNavigate={onNavigate} err={err} setErr={setErr} acceptOpponent={acceptOpponent} />;
+
   const header = (
     <div className="mb-4 flex items-center justify-between">
       <div>
         <div className="text-sm text-zinc-400">Challenge Code</div>
         <div className="text-2xl font-mono font-bold">{ch.code}</div>
       </div>
-      <div className="text-sm text-zinc-400">Game: <span className="font-semibold text-white">{ch.gameType === 'SCOUT' ? '5 Numbers Scout' : ch.gameType === 'DOWN' ? '25 Down' : '25 Up'}</span></div>
+      <div className="text-sm text-zinc-400">Game: <span className="font-semibold text-white">{gameTitle(ch.gameType)}</span></div>
     </div>
   );
 
@@ -713,7 +969,7 @@ export default function Play4StakesRoot() {
       const game = params.get('game');
       if (code) setView({ name: 'play', code: code.toUpperCase(), role });
       else if (game) {
-        const map: any = { scout: 'SCOUT', down: 'DOWN', up: 'UP' };
+        const map: any = { scout: 'SCOUT', down: 'DOWN', up: 'UP', connect4: 'CONNECT4' };
         if (map[game]) setView({ name: 'game', which: map[game] });
       }
     } catch {}
@@ -725,7 +981,7 @@ export default function Play4StakesRoot() {
   if (view.name === 'landing') return <Landing onNavigate={navigate} />;
   if (view.name === 'auth') return <AuthStub onNavigate={navigate} redirect={view.redirect} />;
   if (view.name === 'app') return <AppLanding onNavigate={navigate} authed={auth.authed} uid={uid} />;
-  if (view.name === 'game') return <GamePage title={view.which==='SCOUT'?'5 Numbers Scout':view.which==='DOWN'?'25 Down':'25 Up'} game={view.which} onNavigate={navigate} authed={auth.authed} uid={uid} />;
+  if (view.name === 'game') return <GamePage title={gameTitle(view.which)} game={view.which} onNavigate={navigate} authed={auth.authed} uid={uid} />;
   if (view.name === 'play') return <PlayChallenge code={view.code} role={view.role} onNavigate={navigate} authed={auth.authed} uid={uid} />;
   return null;
 }
