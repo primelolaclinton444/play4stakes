@@ -161,36 +161,36 @@ This is an execution-ready backlog to implement the Connect 4 synchronous lifecy
 
 ## Phase 6 — Security, Integrity, and Abuse Controls
 
-- [ ] **P6.1 Server-side authorization checks on every action**
+- [x] **P6.1 Server-side authorization checks on every action**
   - Only challenge participants can ready/move/view private match events.
 
-- [ ] **P6.2 Anti-replay and duplicate move protection**
+- [x] **P6.2 Anti-replay and duplicate move protection**
   - Move index or nonce checks.
 
-- [ ] **P6.3 Rate limits**
+- [x] **P6.3 Rate limits**
   - Per-player limits on move requests and join attempts.
 
-- [ ] **P6.4 Tamper detection instrumentation**
+- [x] **P6.4 Tamper detection instrumentation**
   - Log repeated illegal move attempts and suspicious patterns.
 
 ---
 
 ## Phase 7 — Testing Strategy
 
-- [ ] **P7.1 Unit tests (rules engine + state transitions)**
+- [x] **P7.1 Unit tests (rules engine + state transitions)**
   - All win vectors, draw, illegal moves, transition guards.
 
-- [ ] **P7.2 Integration tests (challenge lifecycle)**
+- [x] **P7.2 Integration tests (challenge lifecycle)**
   - Create -> accept -> ready -> moves -> complete -> settle.
 
-- [ ] **P7.3 Concurrency tests**
+- [x] **P7.3 Concurrency tests**
   - Simultaneous move submissions.
   - Repeated settlement triggers.
 
-- [ ] **P7.4 Failure-path tests**
+- [x] **P7.4 Failure-path tests**
   - Disconnect, timeout, no-show, worker retries, partial write failures.
 
-- [ ] **P7.5 Wallet invariants tests**
+- [x] **P7.5 Wallet invariants tests**
   - Pot conservation and no double payout across retries.
 
 - [ ] **P7.6 End-to-end UI tests**

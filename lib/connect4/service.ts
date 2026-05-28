@@ -1,7 +1,8 @@
 import { applyMove, createEmptyBoard, detectWinner, isDraw, type Connect4Board, type Connect4Player } from './engine';
+import { assertConnect4ActionAuthorized, assertMoveReplaySafe } from './security';
 import { assertTransition, type MatchStatus } from './stateMachine';
 
-export type Connect4MoveRecord = { moveIndex: number; actorUid: string; col: number; timestamp: number };
+export type Connect4MoveRecord = { moveIndex: number; actorUid: string; col: number; timestamp: number; nonce?: string };
 
 export interface Connect4Match {
   challengeId: string;
@@ -16,6 +17,7 @@ export interface Connect4Match {
   resultType?: 'WIN' | 'DRAW' | 'FORFEIT';
   boardState: Connect4Board;
   moves: Connect4MoveRecord[];
+  usedNonces: string[];
 }
 
 export function initializeMatch(input: {
@@ -36,31 +38,41 @@ export function initializeMatch(input: {
     turnDeadlineAt: input.turnDeadlineAt,
     boardState: createEmptyBoard(),
     moves: [],
+    usedNonces: [],
   };
 }
 
-export function commitAuthoritativeMove(match: Connect4Match, actorUid: string, col: number, now: number, nextDeadlineAt: number): Connect4Match {
+export function commitAuthoritativeMove(match: Connect4Match, actorUid: string, col: number, now: number, nextDeadlineAt: number, providedMoveIndex = match.moves.length, nonce?: string): Connect4Match {
+  assertConnect4ActionAuthorized({ participants: match, actorUid, action: 'MOVE' });
+  assertMoveReplaySafe({
+    expectedMoveIndex: match.moves.length,
+    providedMoveIndex,
+    nonce,
+    replayState: { lastMoveIndex: match.moves.length - 1, usedNonces: new Set(match.usedNonces) },
+  });
   if (match.phase !== 'IN_PROGRESS') throw new Error('INVALID_PHASE');
   if (actorUid !== match.currentTurnUid) throw new Error('NOT_YOUR_TURN');
   if (now > match.turnDeadlineAt) throw new Error('DEADLINE_EXPIRED');
 
   const player: Connect4Player = actorUid === match.creatorUid ? 1 : 2;
   const { board } = applyMove(match.boardState, col, player);
-  const nextMoves = [...match.moves, { moveIndex: match.moves.length, actorUid, col, timestamp: now }];
+  const nextMoves = [...match.moves, { moveIndex: match.moves.length, actorUid, col, timestamp: now, nonce }];
+  const usedNonces = nonce ? [...match.usedNonces, nonce] : match.usedNonces;
 
   const winner = detectWinner(board);
   if (winner) {
     const winnerUid = winner === 1 ? match.creatorUid : match.opponentUid;
-    return { ...match, boardState: board, moves: nextMoves, phase: 'COMPLETE', winnerUid, resultType: 'WIN' };
+    return { ...match, boardState: board, moves: nextMoves, usedNonces, phase: 'COMPLETE', winnerUid, resultType: 'WIN' };
   }
   if (isDraw(board)) {
-    return { ...match, boardState: board, moves: nextMoves, phase: 'COMPLETE', winnerUid: undefined, resultType: 'DRAW' };
+    return { ...match, boardState: board, moves: nextMoves, usedNonces, phase: 'COMPLETE', winnerUid: undefined, resultType: 'DRAW' };
   }
 
   return {
     ...match,
     boardState: board,
     moves: nextMoves,
+    usedNonces,
     currentTurnUid: actorUid === match.creatorUid ? match.opponentUid : match.creatorUid,
     turnNumber: match.turnNumber + 1,
     turnDeadlineAt: nextDeadlineAt,
@@ -85,8 +97,8 @@ export interface ReadyState {
 }
 
 export function setReady(state: ReadyState, actorUid: string, ready: boolean): ReadyState {
+  assertConnect4ActionAuthorized({ participants: state, actorUid, action: 'READY' });
   if (state.phase !== 'WAITING_READY') throw new Error('INVALID_PHASE');
-  if (actorUid !== state.creatorUid && actorUid !== state.opponentUid) throw new Error('UNAUTHORIZED');
   const next = { ...state };
   if (actorUid === state.creatorUid) next.readyCreator = ready;
   if (actorUid === state.opponentUid) next.readyOpponent = ready;

@@ -191,6 +191,61 @@ function gameTitle(game: GameType) { return game === 'SCOUT' ? '5 Numbers Scout'
 function roleUid(ch: Challenge, role: 'creator' | 'opponent') { return role === 'creator' ? ch.creatorUid : ch.opponentUid; }
 function formatSeconds(ms: number) { return `${Math.max(0, Math.ceil(ms / 1000))}s`; }
 
+type ChallengeInvite = Pick<Challenge, 'code' | 'gameType' | 'seed' | 'stake' | 'createdAt' | 'expiresAt' | 'creatorUid' | 'escrowedCreator' | 'mode' | 'phase' | 'readyCreator' | 'readyOpponent' | 'turnNumber'>;
+
+function encodeChallengeInvite(challenge: Challenge): string {
+  const invite: ChallengeInvite = {
+    code: challenge.code,
+    gameType: challenge.gameType,
+    seed: challenge.seed,
+    stake: challenge.stake,
+    createdAt: challenge.createdAt,
+    expiresAt: challenge.expiresAt,
+    creatorUid: challenge.creatorUid,
+    escrowedCreator: challenge.escrowedCreator,
+    mode: challenge.mode,
+    phase: challenge.phase,
+    readyCreator: challenge.readyCreator,
+    readyOpponent: challenge.readyOpponent,
+    turnNumber: challenge.turnNumber,
+  };
+  return window.btoa(encodeURIComponent(JSON.stringify(invite)));
+}
+
+function hydrateChallengeFromInvite(encoded: string): Challenge | null {
+  try {
+    const invite = JSON.parse(decodeURIComponent(window.atob(encoded))) as ChallengeInvite;
+    if (!invite.code || !invite.gameType || !invite.seed || !Number.isFinite(invite.stake) || invite.stake <= 0) return null;
+    if (!invite.creatorUid || !Number.isFinite(invite.createdAt) || !Number.isFinite(invite.expiresAt)) return null;
+    const existing = getChallenge(invite.code);
+    if (existing) return existing;
+    const challenge: Challenge = {
+      code: invite.code.toUpperCase(),
+      gameType: invite.gameType,
+      seed: invite.seed,
+      stake: invite.stake,
+      status: 'OPEN',
+      createdAt: invite.createdAt,
+      expiresAt: invite.expiresAt,
+      creatorUid: invite.creatorUid,
+      creatorAccepted: true,
+      escrowedCreator: invite.escrowedCreator ?? invite.stake,
+      mode: invite.mode ?? (invite.gameType === 'CONNECT4' ? 'SYNC' : 'ASYNC'),
+      phase: invite.phase ?? (invite.gameType === 'CONNECT4' ? 'WAITING_READY' : undefined),
+      readyCreator: invite.readyCreator ?? (invite.gameType === 'CONNECT4' ? false : undefined),
+      readyOpponent: invite.readyOpponent ?? (invite.gameType === 'CONNECT4' ? false : undefined),
+      turnNumber: invite.turnNumber ?? (invite.gameType === 'CONNECT4' ? 0 : undefined),
+    };
+    upsertChallenge(challenge);
+    if (challenge.gameType === 'CONNECT4' && !getConnect4MatchState(challenge.code)) {
+      upsertConnect4MatchState({ challengeCode: challenge.code, challengeId: challenge.code, boardState: createEmptyBoard(), moves: [], phase: challenge.phase ?? 'WAITING_READY' });
+    }
+    return challenge;
+  } catch {
+    return null;
+  }
+}
+
 /*******************************
  * UTILS: Codes, PRNG, Seeds, Shuffle
  *******************************/
@@ -436,11 +491,19 @@ function AppLanding({ onNavigate, authed, uid }: { onNavigate: (v: View) => void
 
 function GamePage({ title, game, onNavigate, authed, uid }: { title: string; game: GameType; onNavigate: (v: View) => void; authed: boolean; uid: string }) {
   const [stake, setStake] = useState<number>(50);
-  const [createInfo, setCreateInfo] = useState<{ code: string; seed: string } | null>(null);
+  const [createInfo, setCreateInfo] = useState<{ code: string; seed: string; invite: string } | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  const shareUrl = (code: string, role: 'creator' | 'opponent' = 'opponent') => {
-    try { const u = new URL(window.location.href); u.searchParams.set('code', code); u.searchParams.set('role', role); return u.toString(); } catch { return `?code=${code}&role=${role}`; }
+  const shareUrl = (code: string, role: 'creator' | 'opponent' = 'opponent', invite?: string) => {
+    try {
+      const u = new URL(window.location.href);
+      u.searchParams.set('code', code);
+      u.searchParams.set('role', role);
+      if (invite) u.searchParams.set('invite', invite);
+      return u.toString();
+    } catch {
+      return `?code=${code}&role=${role}${invite ? `&invite=${encodeURIComponent(invite)}` : ''}`;
+    }
   };
 
   const handleCreate = () => {
@@ -470,7 +533,7 @@ function GamePage({ title, game, onNavigate, authed, uid }: { title: string; gam
     if (isConnect4) {
       upsertConnect4MatchState({ challengeCode: code, challengeId: code, boardState: createEmptyBoard(), moves: [], phase: 'WAITING_READY' });
     }
-    setCreateInfo({ code, seed });
+    setCreateInfo({ code, seed, invite: encodeChallengeInvite(ch) });
   };
 
   return (
@@ -503,7 +566,8 @@ function GamePage({ title, game, onNavigate, authed, uid }: { title: string; gam
               <div className="flex flex-col gap-2 mt-3">
                 <button onClick={() => onNavigate({ name: 'play', code: createInfo.code, role: 'creator' })} className="px-3 py-2 rounded-lg bg-white text-black text-sm font-semibold">Play as Creator</button>
                 <CopyableCode label="Share this code" value={createInfo.code} filename={`challenge_${createInfo.code}`} />
-                <ShareButton url={shareUrl(createInfo.code, 'opponent')} code={createInfo.code} />
+                <CopyableCode label="Shareable invite link" value={shareUrl(createInfo.code, 'opponent', createInfo.invite)} filename={`challenge_link_${createInfo.code}`} />
+                <ShareButton url={shareUrl(createInfo.code, 'opponent', createInfo.invite)} code={createInfo.code} />
               </div>
             </div>
           )}
@@ -966,8 +1030,12 @@ export default function Play4StakesRoot() {
       const params = new URLSearchParams(window.location.search);
       const code = params.get('code');
       const role = (params.get('role') as 'creator' | 'opponent') || 'opponent';
+      const invite = params.get('invite');
       const game = params.get('game');
-      if (code) setView({ name: 'play', code: code.toUpperCase(), role });
+      if (code) {
+        if (invite) hydrateChallengeFromInvite(invite);
+        setView({ name: 'play', code: code.toUpperCase(), role });
+      }
       else if (game) {
         const map: any = { scout: 'SCOUT', down: 'DOWN', up: 'UP', connect4: 'CONNECT4' };
         if (map[game]) setView({ name: 'game', which: map[game] });
