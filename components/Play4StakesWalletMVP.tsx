@@ -424,7 +424,7 @@ function Landing({ onNavigate }: { onNavigate: (v: View) => void }) {
               <input value={code} onChange={e=>setCode(e.target.value.toUpperCase())} placeholder="Enter Code (e.g., 7K3F)" className="flex-1 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 outline-none" />
               <button onClick={()=> code && onNavigate({ name: 'play', code, role: 'opponent' })} className="px-4 py-2 rounded-lg bg-white text-black font-semibold">Join</button>
             </div>
-            <p className="text-xs text-zinc-500 mt-2">Paste a code to play the same seeded board.</p>
+            <p className="text-xs text-zinc-500 mt-2">Paste the full invite link from your opponent — short codes only work on the same device.</p>
           </aside>
         </div>
       </main>
@@ -477,7 +477,7 @@ function AppLanding({ onNavigate, authed, uid }: { onNavigate: (v: View) => void
           <input value={code} onChange={e => setCode(e.target.value.toUpperCase())} placeholder="Enter Code (e.g., 7K3F)" className="flex-1 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 outline-none" />
           <button onClick={() => code && onNavigate({ name: 'play', code, role: 'opponent' })} className="px-4 py-2 rounded-lg bg-white text-black font-semibold">Join</button>
         </div>
-        <p className="text-xs text-zinc-500 mt-2">Use a code shared by a friend to load the same seeded board.</p>
+        <p className="text-xs text-zinc-500 mt-2">Paste the full invite link from your opponent — short codes only work on the same device.</p>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <GameCard title="5 Numbers Scout" desc="Find any five targets fast." onClick={() => onNavigate({ name: 'game', which: 'SCOUT' })} />
@@ -565,8 +565,7 @@ function GamePage({ title, game, onNavigate, authed, uid }: { title: string; gam
               <div className="text-xs text-zinc-400 mt-1">Stake: <span className="font-semibold text-white">{stake}</span> coins (escrowed)</div>
               <div className="flex flex-col gap-2 mt-3">
                 <button onClick={() => onNavigate({ name: 'play', code: createInfo.code, role: 'creator' })} className="px-3 py-2 rounded-lg bg-white text-black text-sm font-semibold">Play as Creator</button>
-                <CopyableCode label="Share this code" value={createInfo.code} filename={`challenge_${createInfo.code}`} />
-                <CopyableCode label="Shareable invite link" value={shareUrl(createInfo.code, 'opponent', createInfo.invite)} filename={`challenge_link_${createInfo.code}`} />
+                <CopyableCode label="Invite link — share this (includes all challenge data)" value={shareUrl(createInfo.code, 'opponent', createInfo.invite)} filename={`challenge_link_${createInfo.code}`} />
                 <ShareButton url={shareUrl(createInfo.code, 'opponent', createInfo.invite)} code={createInfo.code} />
               </div>
             </div>
@@ -829,7 +828,20 @@ function PlayChallenge({ code, role, onNavigate, authed, uid }: { code: string; 
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    const found = getChallenge(code);
+    // Try localStorage first (creator's own browser, or already-hydrated recipient)
+    let found = getChallenge(code);
+
+    // If not found, attempt to hydrate from the ?invite= blob in the URL (recipient flow)
+    if (!found) {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const invite = params.get('invite');
+        if (invite) {
+          found = hydrateChallengeFromInvite(invite) ?? undefined;
+        }
+      } catch {}
+    }
+
     if (found) {
       if (role === 'opponent' && !found.opponentUid) found.opponentUid = uid;
       if (role === 'creator' && !found.creatorUid) found.creatorUid = uid;
